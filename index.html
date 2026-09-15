@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>culture — ascii</title>
+<title>culture — ascii cube</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap');
 
   :root{
-    --paper:   #EFEDE7;
-    --ink:     #23211E;
-    --ink-soft:#4B4841;
+    --paper:   hsl(0, 0%, 18%);
+    --ink:     #fcfbf9;
+    --ink-soft:#909090;
     --accent:  #5B6B63;
     --line:    #D8D4CA;
   }
@@ -27,43 +27,33 @@
   }
 
   @media (prefers-reduced-motion: reduce){
-    *{ animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+    .cursor{ animation-duration: 0.001ms !important; }
   }
 
   .stage{
-    width: min(92vw, 420px);
+    width: min(92vw, 440px);
     display:flex;
     flex-direction:column;
     align-items:center;
-    gap:22px;
+    gap:20px;
   }
 
   .art-wrap{
-    position:relative;
     width:100%;
-    height:172px;
+    height:270px;
     display:flex;
     align-items:center;
     justify-content:center;
   }
 
-  pre.art{
-    position:absolute;
+  #cube{
     margin:0;
-    font-size:13px;
-    line-height:1.28;
-    letter-spacing:0.5px;
-    font-weight:300;
+    font-size:10px;
+    line-height:1.05;
+    letter-spacing:0;
+    font-weight:400;
     color: var(--ink);
-    text-align:center;
     white-space:pre;
-    opacity:0;
-    transform: translateY(6px) scale(0.985);
-    transition: opacity 900ms cubic-bezier(.4,0,.2,1), transform 900ms cubic-bezier(.4,0,.2,1);
-  }
-  pre.art.active{
-    opacity:1;
-    transform: translateY(0) scale(1);
   }
 
   .rule{
@@ -120,7 +110,7 @@
 <body>
 
   <div class="stage">
-    <div class="art-wrap" id="artWrap"></div>
+    <div class="art-wrap"><pre id="cube"></pre></div>
     <div class="rule"></div>
     <div class="caption-row">
       <span>tracking</span>
@@ -131,66 +121,107 @@
   </div>
 
 <script>
-  const items = [
-    {
-      label: "film",
-      art: `
-        .-~~~-.
-      .'  o o  \`.
-     /   o   o   \\
-    |  o       o  |
-    |   o     o   |
-     \\   o   o   /
-      \`.  o o  .'
-        \`-...-'  `
-    },
-    {
-      label: "books",
-      art: `
+  /* ---------- rotating wireframe cube, rendered as text ---------- */
 
-         ,   ,
-        /////|
-       ///// |
-      |~~~|  |
-      |===|  |
-      |j  |  |
-      | g |  |
-      |  s| /
-      |===|/
-      '---'
+  const cols = 52, rows = 26;
+  const cubeEl = document.getElementById('cube');
 
-`
-    },
-    {
-      label: "music",
-      art: `
-
-       _________
-     /           \\
-    |   _______   |
-    |  /       \\  |
-    |  \\   o   /  |
-    |   \\_____/   |
-     \\           /
-      \\_________/     `
-    }
+  const vertices = [
+    [-1,-1,-1], [1,-1,-1], [1,1,-1], [-1,1,-1],
+    [-1,-1, 1], [1,-1, 1], [1,1, 1], [-1,1, 1]
   ];
 
-  const artWrap = document.getElementById('artWrap');
+  const edges = [
+    [0,1],[1,2],[2,3],[3,0],
+    [4,5],[5,6],[6,7],[7,4],
+    [0,4],[1,5],[2,6],[3,7]
+  ];
+
+  const shades = " .:-=+*#%@";
+  const camDist = 4;
+  const fov = 3;
+  const scaleX = cols / 4.4;
+  const scaleY = (rows / 4.4) * 0.55; // compensate for tall character cells
+  const cx = cols / 2, cy = rows / 2;
+
+  function rotate([x, y, z], ax, ay, az){
+    let cosx = Math.cos(ax), sinx = Math.sin(ax);
+    let y1 = y*cosx - z*sinx, z1 = y*sinx + z*cosx;
+    y = y1; z = z1;
+
+    let cosy = Math.cos(ay), siny = Math.sin(ay);
+    let x1 = x*cosy + z*siny, z2 = -x*siny + z*cosy;
+    x = x1; z = z2;
+
+    let cosz = Math.cos(az), sinz = Math.sin(az);
+    let x2 = x*cosz - y*sinz, y2 = x*sinz + y*cosz;
+    x = x2; y = y2;
+
+    return [x, y, z];
+  }
+
+  function project([x, y, z]){
+    const zc = z + camDist;
+    const scale = fov / zc;
+    return { sx: x*scale, sy: y*scale, zc };
+  }
+
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const speed = reduceMotion ? 0.12 : 1;
+
+  let angleX = 0.4, angleY = 0.6, angleZ = 0;
+
+  function renderFrame(){
+    const buffer = Array.from({ length: rows }, () => new Array(cols).fill(' '));
+
+    const rotated = vertices.map(v => rotate(v, angleX, angleY, angleZ));
+    const projected = rotated.map(project);
+
+    edges.forEach(([a, b]) => {
+      const p0 = projected[a], p1 = projected[b];
+      const steps = 40;
+      for(let i = 0; i <= steps; i++){
+        const t = i / steps;
+        const sx = p0.sx + (p1.sx - p0.sx) * t;
+        const sy = p0.sy + (p1.sy - p0.sy) * t;
+        const zc = p0.zc + (p1.zc - p0.zc) * t;
+
+        const col = Math.round(cx + sx * scaleX);
+        const row = Math.round(cy - sy * scaleY);
+
+        if(row >= 0 && row < rows && col >= 0 && col < cols){
+          const depth = Math.min(1, Math.max(0, (camDist + 1.6 - zc) / 3.2));
+          const shadeIdx = Math.round(depth * (shades.length - 1));
+          const ch = shades[shadeIdx];
+          const current = buffer[row][col];
+          if(shades.indexOf(ch) >= shades.indexOf(current === ' ' ? shades[0] : current)){
+            buffer[row][col] = ch;
+          }
+        }
+      }
+    });
+
+    cubeEl.textContent = buffer.map(r => r.join('')).join('\n');
+
+    angleX += 0.011 * speed;
+    angleY += 0.017 * speed;
+    angleZ += 0.006 * speed;
+
+    requestAnimationFrame(renderFrame);
+  }
+
+  requestAnimationFrame(renderFrame);
+
+  /* ---------- cycling caption, same as before ---------- */
+
+  const items = ["film", "books", "music"];
   const labelEl = document.getElementById('label');
-  const dotsEl  = document.getElementById('dots');
+  const dotsEl = document.getElementById('dots');
 
   items.forEach(() => {
-    const pre = document.createElement('pre');
-    pre.className = 'art';
-    artWrap.appendChild(pre);
-  });
-  items.forEach((_, i) => {
     const d = document.createElement('span');
     dotsEl.appendChild(d);
   });
-
-  const artEls = artWrap.querySelectorAll('pre.art');
   const dotEls = dotsEl.querySelectorAll('span');
 
   let current = 0;
@@ -198,30 +229,26 @@
   function typeLabel(text){
     labelEl.textContent = '';
     let i = 0;
-    const speed = 55;
+    const speedMs = 55;
     (function step(){
       if(i <= text.length){
         labelEl.textContent = text.slice(0, i);
         i++;
-        setTimeout(step, speed);
+        setTimeout(step, speedMs);
       }
     })();
   }
 
-  function show(index){
-    artEls.forEach((el, i) => {
-      el.textContent = items[i].art;
-      el.classList.toggle('active', i === index);
-    });
+  function showLabel(index){
     dotEls.forEach((d, i) => d.classList.toggle('on', i === index));
-    typeLabel(items[index].label);
+    typeLabel(items[index]);
   }
 
-  show(current);
+  showLabel(current);
 
   setInterval(() => {
     current = (current + 1) % items.length;
-    show(current);
+    showLabel(current);
   }, 3600);
 </script>
 
